@@ -41,8 +41,6 @@
 _UA_BEGIN_DECLS
 
 /* Forward declarations */
-struct UA_PubSubConfiguration;
-typedef struct UA_PubSubConfiguration UA_PubSubConfiguration;
 typedef void (*UA_Server_AsyncOperationNotifyCallback)(UA_Server *server);
 
 /**
@@ -350,8 +348,8 @@ struct UA_ServerConfig {
     /**
      * PubSub
      * ^^^^^^ */
-    UA_Boolean pubsubEnabled;
 #ifdef UA_ENABLE_PUBSUB
+    UA_Boolean pubsubEnabled;
     UA_PubSubConfiguration pubSubConfig;
 #endif
 
@@ -407,7 +405,7 @@ UA_ServerConfig_clear(UA_ServerConfig *config);
 
 UA_DEPRECATED static UA_INLINE void
 UA_ServerConfig_clean(UA_ServerConfig *config) {
-	UA_ServerConfig_clear(config);
+    UA_ServerConfig_clear(config);
 }
 
 /**

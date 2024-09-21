@@ -23,7 +23,7 @@
 #include <open62541/transport_generated.h>
 
 #include "ua_client_internal.h"
-#include "ua_types_encoding_binary.h"
+#include "../ua_types_encoding_binary.h"
 
 static void
 clientHouseKeeping(UA_Client *client, void *_);
@@ -272,7 +272,7 @@ static const char *sessionStateTexts[6] =
 
 void
 notifyClientState(UA_Client *client) {
-    UA_LOCK_ASSERT(&client->clientMutex, 1);
+    UA_LOCK_ASSERT(&client->clientMutex);
 
     if(client->connectStatus == client->oldConnectStatus &&
        client->channel.state == client->oldChannelState &&
@@ -322,7 +322,7 @@ notifyClientState(UA_Client *client) {
 static UA_StatusCode
 sendRequest(UA_Client *client, const void *request,
             const UA_DataType *requestType, UA_UInt32 *requestId) {
-    UA_LOCK_ASSERT(&client->clientMutex, 1);
+    UA_LOCK_ASSERT(&client->clientMutex);
 
     /* Renew SecureChannel if necessary */
     __Client_renewSecureChannel(client);
@@ -566,7 +566,7 @@ __Client_Service(UA_Client *client, const void *request,
     UA_EventLoop *el = client->config.eventLoop;
     if(!el || el->state != UA_EVENTLOOPSTATE_STARTED) {
         respHeader->serviceResult = UA_STATUSCODE_BADINTERNALERROR;
-		return;
+        return;
     }
 
     /* Check that the SecureChannel is open and also a Session active (if we
@@ -751,7 +751,7 @@ __Client_AsyncService(UA_Client *client, const void *request,
                       UA_ClientAsyncServiceCallback callback,
                       const UA_DataType *responseType,
                       void *userdata, UA_UInt32 *requestId) {
-    UA_LOCK_ASSERT(&client->clientMutex, 1);
+    UA_LOCK_ASSERT(&client->clientMutex);
 
     /* Is the SecureChannel connected? */
     if(client->channel.state != UA_SECURECHANNELSTATE_OPEN) {
@@ -868,8 +868,8 @@ UA_Client_addTimedCallback(UA_Client *client, UA_ClientCallback callback,
         return UA_STATUSCODE_BADINTERNALERROR;
     UA_LOCK(&client->clientMutex);
     UA_StatusCode res = client->config.eventLoop->
-        addTimedCallback(client->config.eventLoop, (UA_Callback)callback,
-                         client, data, date, callbackId);
+        addTimer(client->config.eventLoop, (UA_Callback)callback,
+                 client, data, 0.0, &date, UA_TIMERPOLICY_ONCE, callbackId);
     UA_UNLOCK(&client->clientMutex);
     return res;
 }
@@ -881,9 +881,8 @@ UA_Client_addRepeatedCallback(UA_Client *client, UA_ClientCallback callback,
         return UA_STATUSCODE_BADINTERNALERROR;
     UA_LOCK(&client->clientMutex);
     UA_StatusCode res = client->config.eventLoop->
-        addCyclicCallback(client->config.eventLoop, (UA_Callback)callback,
-                          client, data, interval_ms, NULL,
-                          UA_TIMER_HANDLE_CYCLEMISS_WITH_CURRENTTIME, callbackId);
+        addTimer(client->config.eventLoop, (UA_Callback)callback, client, data,
+                 interval_ms, NULL, UA_TIMERPOLICY_CURRENTTIME, callbackId);
     UA_UNLOCK(&client->clientMutex);
     return res;
 }
@@ -895,8 +894,8 @@ UA_Client_changeRepeatedCallbackInterval(UA_Client *client, UA_UInt64 callbackId
         return UA_STATUSCODE_BADINTERNALERROR;
     UA_LOCK(&client->clientMutex);
     UA_StatusCode res = client->config.eventLoop->
-        modifyCyclicCallback(client->config.eventLoop, callbackId, interval_ms,
-                             NULL, UA_TIMER_HANDLE_CYCLEMISS_WITH_CURRENTTIME);
+        modifyTimer(client->config.eventLoop, callbackId, interval_ms,
+                    NULL, UA_TIMERPOLICY_CURRENTTIME);
     UA_UNLOCK(&client->clientMutex);
     return res;
 }
@@ -906,8 +905,7 @@ UA_Client_removeCallback(UA_Client *client, UA_UInt64 callbackId) {
     if(!client->config.eventLoop)
         return;
     UA_LOCK(&client->clientMutex);
-    client->config.eventLoop->
-        removeCyclicCallback(client->config.eventLoop, callbackId);
+    client->config.eventLoop->removeTimer(client->config.eventLoop, callbackId);
     UA_UNLOCK(&client->clientMutex);
 }
 
@@ -1024,7 +1022,7 @@ clientHouseKeeping(UA_Client *client, void *_) {
 
 UA_StatusCode
 __UA_Client_startup(UA_Client *client) {
-    UA_LOCK_ASSERT(&client->clientMutex, 1);
+    UA_LOCK_ASSERT(&client->clientMutex);
 
     UA_EventLoop *el = client->config.eventLoop;
     UA_CHECK_ERROR(el != NULL,
@@ -1037,10 +1035,10 @@ __UA_Client_startup(UA_Client *client) {
      * mutex again */
     UA_StatusCode rv = UA_STATUSCODE_GOOD;
     if(!client->houseKeepingCallbackId) {
-        rv = el->addCyclicCallback(el, (UA_Callback)clientHouseKeeping,
-                                   client, NULL, 1000.0, NULL,
-                                   UA_TIMER_HANDLE_CYCLEMISS_WITH_CURRENTTIME,
-                                   &client->houseKeepingCallbackId);
+        rv = el->addTimer(el, (UA_Callback)clientHouseKeeping,
+                          client, NULL, 1000.0, NULL,
+                          UA_TIMERPOLICY_CURRENTTIME,
+                          &client->houseKeepingCallbackId);
         UA_CHECK_STATUS(rv, return rv);
     }
 

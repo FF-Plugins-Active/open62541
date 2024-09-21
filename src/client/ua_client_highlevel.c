@@ -13,7 +13,7 @@
 
 #include <open62541/client_highlevel.h>
 #include <open62541/client_highlevel_async.h>
-#include "util/ua_util_internal.h"
+#include "../util/ua_util_internal.h"
 
 /* The highlevel client API is an "outer onion layer". This file does not
  * include ua_client_internal.h on purpose. */
@@ -882,7 +882,12 @@ AttributeReadCallback(UA_Client *client, void *userdata,
 
     /* Check the type. Try to adjust "in situ" if no match. */
     if(!UA_Variant_hasScalarType(&dv->value, ctx->resultType)) {
+        /* Remember the old pointer, adjustType can "unwrap" a type but won't
+         * free the wrapper. Because the server code still keeps the wrapper. */
+        void *oldVal = dv->value.data;
         adjustType(&dv->value, ctx->resultType);
+        if(dv->value.data != oldVal)
+            UA_free(oldVal);
         if(!UA_Variant_hasScalarType(&dv->value, ctx->resultType)) {
             res = UA_STATUSCODE_BADINTERNALERROR;
             goto finish;

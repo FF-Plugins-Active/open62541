@@ -18,24 +18,13 @@
 /*********/
 
 static UA_DateTime
-UA_EventLoopPOSIX_nextCyclicTime(UA_EventLoop *public_el) {
+UA_EventLoopPOSIX_nextTimer(UA_EventLoop *public_el) {
     UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX*)public_el;
-    return UA_Timer_nextRepeatedTime(&el->timer);
+    return UA_Timer_next(&el->timer);
 }
 
 static UA_StatusCode
-UA_EventLoopPOSIX_addTimedCallback(UA_EventLoop *public_el,
-                                   UA_Callback callback,
-                                   void *application, void *data,
-                                   UA_DateTime date,
-                                   UA_UInt64 *callbackId) {
-    UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX*)public_el;
-    return UA_Timer_addTimedCallback(&el->timer, callback, application,
-                                     data, date, callbackId);
-}
-
-static UA_StatusCode
-UA_EventLoopPOSIX_addCyclicCallback(UA_EventLoop *public_el,
+UA_EventLoopPOSIX_addTimer(UA_EventLoop *public_el,
                                     UA_Callback cb,
                                     void *application, void *data,
                                     UA_Double interval_ms,
@@ -43,29 +32,28 @@ UA_EventLoopPOSIX_addCyclicCallback(UA_EventLoop *public_el,
                                     UA_TimerPolicy timerPolicy,
                                     UA_UInt64 *callbackId) {
     UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX*)public_el;
-    return UA_Timer_addRepeatedCallback(&el->timer, cb, application,
-                                        data, interval_ms,
-                                        public_el->dateTime_nowMonotonic(public_el),
-                                        baseTime, timerPolicy, callbackId);
+    return UA_Timer_add(&el->timer, cb, application, data, interval_ms,
+                        public_el->dateTime_nowMonotonic(public_el),
+                        baseTime, timerPolicy, callbackId);
 }
 
 static UA_StatusCode
-UA_EventLoopPOSIX_modifyCyclicCallback(UA_EventLoop *public_el,
-                                       UA_UInt64 callbackId,
-                                       UA_Double interval_ms,
-                                       UA_DateTime *baseTime,
-                                       UA_TimerPolicy timerPolicy) {
+UA_EventLoopPOSIX_modifyTimer(UA_EventLoop *public_el,
+                              UA_UInt64 callbackId,
+                              UA_Double interval_ms,
+                              UA_DateTime *baseTime,
+                              UA_TimerPolicy timerPolicy) {
     UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX*)public_el;
-    return UA_Timer_changeRepeatedCallback(&el->timer, callbackId, interval_ms,
-                                           public_el->dateTime_nowMonotonic(public_el),
-                                           baseTime, timerPolicy);
+    return UA_Timer_modify(&el->timer, callbackId, interval_ms,
+                           public_el->dateTime_nowMonotonic(public_el),
+                           baseTime, timerPolicy);
 }
 
 static void
-UA_EventLoopPOSIX_removeCyclicCallback(UA_EventLoop *public_el,
-                                       UA_UInt64 callbackId) {
+UA_EventLoopPOSIX_removeTimer(UA_EventLoop *public_el,
+                              UA_UInt64 callbackId) {
     UA_EventLoopPOSIX *el = (UA_EventLoopPOSIX*)public_el;
-    UA_Timer_removeCallback(&el->timer, callbackId);
+    UA_Timer_remove(&el->timer, callbackId);
 }
 
 void
@@ -102,7 +90,7 @@ processDelayed(UA_EventLoopPOSIX *el) {
     UA_LOG_TRACE(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
                  "Process delayed callbacks");
 
-    UA_LOCK_ASSERT(&el->elMutex, 1);
+    UA_LOCK_ASSERT(&el->elMutex);
 
     /* First empty the linked list in the el. So a delayed callback can add
      * (itself) to the list. New entries are then processed during the next
@@ -136,8 +124,8 @@ UA_EventLoopPOSIX_start(UA_EventLoopPOSIX *el) {
         return UA_STATUSCODE_BADINTERNALERROR;
     }
 
-    UA_LOG_INFO(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
-                "Starting the EventLoop");
+    UA_LOG_DEBUG(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
+                 "Starting the EventLoop");
 
     /* Setting the clock source */
     const UA_Int32 *cs = (const UA_Int32*)
@@ -231,7 +219,7 @@ UA_EventLoopPOSIX_start(UA_EventLoopPOSIX *el) {
 
 static void
 checkClosed(UA_EventLoopPOSIX *el) {
-    UA_LOCK_ASSERT(&el->elMutex, 1);
+    UA_LOCK_ASSERT(&el->elMutex);
 
     UA_EventSource *es = el->eventLoop.eventSources;
     while(es) {
@@ -257,8 +245,8 @@ checkClosed(UA_EventLoopPOSIX *el) {
     close(el->epollfd);
 #endif
 
-    UA_LOG_INFO(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
-                "The EventLoop has stopped");
+    UA_LOG_DEBUG(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
+                 "The EventLoop has stopped");
 }
 
 static void
@@ -272,8 +260,8 @@ UA_EventLoopPOSIX_stop(UA_EventLoopPOSIX *el) {
         return;
     }
 
-    UA_LOG_INFO(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
-                "Stopping the EventLoop");
+    UA_LOG_DEBUG(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
+                 "Stopping the EventLoop");
 
     /* Set to STOPPING to prevent "normal use" */
     *(UA_EventLoopState*)(uintptr_t)&el->eventLoop.state =
@@ -313,7 +301,7 @@ UA_EventLoopPOSIX_run(UA_EventLoopPOSIX *el, UA_UInt32 timeout) {
     if(el->eventLoop.state == UA_EVENTLOOPSTATE_FRESH ||
        el->eventLoop.state == UA_EVENTLOOPSTATE_STOPPED) {
         UA_LOG_WARNING(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
-                       "Cannot iterate a stopped EventLoop");
+                       "Cannot run a stopped EventLoop");
         el->executing = false;
         UA_UNLOCK(&el->elMutex);
         return UA_STATUSCODE_BADINTERNALERROR;
@@ -549,11 +537,10 @@ UA_EventLoop_new_POSIX(const UA_Logger *logger) {
     el->eventLoop.dateTime_localTimeUtcOffset =
         UA_EventLoopPOSIX_DateTime_localTimeUtcOffset;
 
-    el->eventLoop.nextCyclicTime = UA_EventLoopPOSIX_nextCyclicTime;
-    el->eventLoop.addCyclicCallback = UA_EventLoopPOSIX_addCyclicCallback;
-    el->eventLoop.modifyCyclicCallback = UA_EventLoopPOSIX_modifyCyclicCallback;
-    el->eventLoop.removeCyclicCallback = UA_EventLoopPOSIX_removeCyclicCallback;
-    el->eventLoop.addTimedCallback = UA_EventLoopPOSIX_addTimedCallback;
+    el->eventLoop.nextTimer = UA_EventLoopPOSIX_nextTimer;
+    el->eventLoop.addTimer = UA_EventLoopPOSIX_addTimer;
+    el->eventLoop.modifyTimer = UA_EventLoopPOSIX_modifyTimer;
+    el->eventLoop.removeTimer = UA_EventLoopPOSIX_removeTimer;
     el->eventLoop.addDelayedCallback = UA_EventLoopPOSIX_addDelayedCallback;
     el->eventLoop.removeDelayedCallback = UA_EventLoopPOSIX_removeDelayedCallback;
 
@@ -697,7 +684,7 @@ flushSelfPipe(UA_SOCKET s) {
 
 UA_StatusCode
 UA_EventLoopPOSIX_registerFD(UA_EventLoopPOSIX *el, UA_RegisteredFD *rfd) {
-    UA_LOCK_ASSERT(&el->elMutex, 1);
+    UA_LOCK_ASSERT(&el->elMutex);
     UA_LOG_DEBUG(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
                  "Registering fd: %u", (unsigned)rfd->fd);
 
@@ -718,13 +705,13 @@ UA_EventLoopPOSIX_registerFD(UA_EventLoopPOSIX *el, UA_RegisteredFD *rfd) {
 UA_StatusCode
 UA_EventLoopPOSIX_modifyFD(UA_EventLoopPOSIX *el, UA_RegisteredFD *rfd) {
     /* Do nothing, it is enough if the data was changed in the rfd */
-    UA_LOCK_ASSERT(&el->elMutex, 1);
+    UA_LOCK_ASSERT(&el->elMutex);
     return UA_STATUSCODE_GOOD;
 }
 
 void
 UA_EventLoopPOSIX_deregisterFD(UA_EventLoopPOSIX *el, UA_RegisteredFD *rfd) {
-    UA_LOCK_ASSERT(&el->elMutex, 1);
+    UA_LOCK_ASSERT(&el->elMutex);
     UA_LOG_DEBUG(el->eventLoop.logger, UA_LOGCATEGORY_EVENTLOOP,
                  "Unregistering fd: %u", (unsigned)rfd->fd);
 
@@ -759,7 +746,7 @@ UA_EventLoopPOSIX_deregisterFD(UA_EventLoopPOSIX *el, UA_RegisteredFD *rfd) {
 
 static UA_FD
 setFDSets(UA_EventLoopPOSIX *el, fd_set *readset, fd_set *writeset, fd_set *errset) {
-    UA_LOCK_ASSERT(&el->elMutex, 1);
+    UA_LOCK_ASSERT(&el->elMutex);
 
     FD_ZERO(readset);
     FD_ZERO(writeset);
@@ -791,7 +778,7 @@ setFDSets(UA_EventLoopPOSIX *el, fd_set *readset, fd_set *writeset, fd_set *errs
 UA_StatusCode
 UA_EventLoopPOSIX_pollFDs(UA_EventLoopPOSIX *el, UA_DateTime listenTimeout) {
     UA_assert(listenTimeout >= 0);
-    UA_LOCK_ASSERT(&el->elMutex, 1);
+    UA_LOCK_ASSERT(&el->elMutex);
 
     fd_set readset, writeset, errset;
     UA_FD highestfd = setFDSets(el, &readset, &writeset, &errset);
