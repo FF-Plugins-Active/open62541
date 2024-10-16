@@ -294,11 +294,8 @@ getDefaultEncryptedSecurityPolicy(UA_Server *server) {
         if(!UA_String_equal(&UA_SECURITY_POLICY_NONE_URI, &sp->policyUri))
             return sp;
     }
-    UA_LOG_WARNING(server->config.logging, UA_LOGCATEGORY_CLIENT,
-                   "Could not find a SecurityPolicy with encryption for the "
-                   "UserTokenPolicy. Using an unencrypted policy.");
     return server->config.securityPoliciesSize > 0 ?
-        &server->config.securityPolicies[0]: NULL;
+        &server->config.securityPolicies[0] : NULL;
 }
 
 const char *securityModeStrs[4] = {"-invalid", "-none", "-sign", "-sign+encrypt"};
@@ -423,7 +420,7 @@ setCurrentEndPointsArray(UA_Server *server, const UA_String endpointUrl,
                 sp = getDefaultEncryptedSecurityPolicy(server);
             if(sp) {
                 UA_ByteString_clear(&ed->serverCertificate);
-                retval |= UA_String_copy(&sp->localCertificate, &ed->serverCertificate);
+                retval |= UA_ByteString_copy(&sp->localCertificate, &ed->serverCertificate);
             }
 
             /* Set the User Identity Token list fromt the AccessControl plugin */

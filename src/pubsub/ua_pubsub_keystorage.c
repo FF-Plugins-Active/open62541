@@ -7,7 +7,6 @@
  */
 
 #include "ua_pubsub_keystorage.h"
-#include "ua_pubsub.h"
 
 #ifdef UA_ENABLE_PUBSUB_SKS /* conditional compilation */
 
@@ -421,6 +420,8 @@ sksClientCleanupCb(void *client, void *context) {
          * be freed in UA_PubSubKeyStorage_delete. */
         sksClient->config.securityPolicies = NULL;
         sksClient->config.securityPoliciesSize = 0;
+        sksClient->config.authSecurityPolicies = NULL;
+        sksClient->config.authSecurityPoliciesSize = 0;
         sksClient->config.certificateVerification.context = NULL;
         sksClient->config.logging = NULL;
         sksClient->config.clientContext = NULL;
